@@ -1,8 +1,8 @@
-# Openclaw Dashboard - Comprehensive Build Plan
+# ClawHub - Comprehensive Build Plan
 
 ## Overview
 
-A web dashboard that Openclaw users connect to via a native Openclaw plugin, giving them full visibility into all agents running on their setup, what they're doing, AI usage costs, session history, and more.
+ClawHub is a web app that Openclaw users connect to via a native Openclaw plugin, giving them full visibility into all agents running on their setup, what they're doing, AI usage costs, session history, and more.
 
 **Stack:** Next.js + Convex + Clerk + Polar
 **Connectivity:** Native Openclaw plugin pushes telemetry to Convex
@@ -16,13 +16,13 @@ A web dashboard that Openclaw users connect to via a native Openclaw plugin, giv
 
 ```
 ┌─────────────────────┐        HTTPS POST         ┌──────────────────────────┐
-│  User's Machine      │  ─────────────────────►  │  Hosted Dashboard         │
+│  User's Machine      │  ─────────────────────►  │  ClawHub (Hosted)         │
 │                      │   (every 60s + events)    │                           │
 │  ┌────────────────┐  │                           │  ┌─────────────────────┐  │
 │  │  Openclaw       │  │                           │  │  Convex Backend      │  │
 │  │  Gateway        │  │                           │  │                     │  │
 │  │  ┌────────────┐│  │   Telemetry payloads      │  │  HTTP Actions       │  │
-│  │  │ Dashboard  ││──│──────────────────────────►│  │  (ingest endpoint)  │  │
+│  │  │ ClawHub    ││──│──────────────────────────►│  │  (ingest endpoint)  │  │
 │  │  │ Plugin     ││  │                           │  │       │             │  │
 │  │  └────────────┘│  │                           │  │       ▼             │  │
 │  │                │  │                           │  │  Mutations          │  │
@@ -38,21 +38,21 @@ A web dashboard that Openclaw users connect to via a native Openclaw plugin, giv
                                                    │  │                     │  │
                                                    │  │  Clerk (Auth)       │  │
                                                    │  │  Polar (Billing)    │  │
-                                                   │  │  Dashboard UI       │  │
+                                                   │  │  ClawHub UI         │  │
                                                    │  └─────────────────────┘  │
                                                    └──────────────────────────┘
 ```
 
 ---
 
-## Part 1: Openclaw Plugin (`openclaw-dashboard-plugin`)
+## Part 1: Openclaw Plugin (`openclaw-clawhub-plugin`)
 
 This is a native Openclaw plugin that runs inside the user's Openclaw gateway and pushes telemetry data to the hosted Convex backend.
 
 ### 1.1 Plugin Manifest
 
 ```
-openclaw-dashboard-plugin/
+openclaw-clawhub-plugin/
 ├── openclaw.plugin.json
 ├── src/
 │   ├── index.ts          # Plugin entry point
@@ -61,7 +61,7 @@ openclaw-dashboard-plugin/
 │   ├── snapshot.ts       # Periodic full-state snapshots
 │   └── types.ts          # Shared telemetry types
 ├── skills/
-│   └── dashboard/
+│   └── clawhub/
 │       └── SKILL.md      # User-invocable skill for status/config
 ├── package.json
 └── tsconfig.json
@@ -70,16 +70,16 @@ openclaw-dashboard-plugin/
 **openclaw.plugin.json:**
 ```json
 {
-  "id": "openclaw-dashboard",
-  "name": "Openclaw Dashboard",
-  "description": "Connect your Openclaw to the Dashboard for monitoring, analytics, and cost tracking",
+  "id": "openclaw-clawhub",
+  "name": "ClawHub",
+  "description": "Connect your Openclaw to ClawHub for monitoring, analytics, and cost tracking",
   "version": "1.0.0",
   "kind": "telemetry",
-  "skills": ["./skills/dashboard"],
+  "skills": ["./skills/clawhub"],
   "configSchema": {
     "type": "object",
     "properties": {
-      "apiKey": { "type": "string", "description": "Dashboard API key (from your dashboard settings)" },
+      "apiKey": { "type": "string", "description": "ClawHub API key (from your ClawHub settings)" },
       "endpoint": { "type": "string", "default": "https://<convex-deployment>.convex.site/ingest" },
       "syncIntervalMs": { "type": "number", "default": 60000 },
       "batchSize": { "type": "number", "default": 50 },
@@ -88,8 +88,8 @@ openclaw-dashboard-plugin/
     "required": ["apiKey"]
   },
   "uiHints": {
-    "apiKey": { "label": "Dashboard API Key", "sensitive": true },
-    "endpoint": { "label": "Dashboard Endpoint URL" },
+    "apiKey": { "label": "ClawHub API Key", "sensitive": true },
+    "endpoint": { "label": "ClawHub Endpoint URL" },
     "syncIntervalMs": { "label": "Sync Interval (ms)" }
   }
 }
@@ -132,7 +132,7 @@ A full-state snapshot is also pushed periodically containing:
 ```typescript
 type TelemetryPayload = {
   instanceId: string;        // Unique per Openclaw install (derived from device identity)
-  apiKey: string;            // Links to user's dashboard account
+  apiKey: string;            // Links to user's ClawHub account
   timestamp: number;
   kind: "events" | "snapshot";
   events?: TelemetryEvent[];
@@ -180,7 +180,7 @@ type InstanceSnapshot = {
 The plugin also registers a gateway method so users can check plugin status:
 
 ```typescript
-api.registerGatewayMethod("dashboard.status", async (req, res, context) => {
+api.registerGatewayMethod("clawhub.status", async (req, res, context) => {
   res(true, {
     connected: true,
     lastSyncAt: lastSyncTimestamp,
@@ -192,17 +192,17 @@ api.registerGatewayMethod("dashboard.status", async (req, res, context) => {
 
 ### 1.5 User-Invocable Skill
 
-A SKILL.md that lets users ask Openclaw about their dashboard connection:
+A SKILL.md that lets users ask Openclaw about their ClawHub connection:
 
 ```markdown
 ---
-name: dashboard
-description: Check Dashboard connection status and manage settings
+name: clawhub
+description: Check ClawHub connection status and manage settings
 user-invocable: true
 command-dispatch: tool
 ---
 
-Check the Dashboard plugin status by calling the `dashboard.status` gateway method.
+Check the ClawHub plugin status by calling the `clawhub.status` gateway method.
 Report connection status, last sync time, and pending events.
 ```
 
@@ -237,7 +237,7 @@ export default defineSchema({
   apiKeys: defineTable({
     userId: v.id("users"),
     key: v.string(),            // hashed
-    keyPrefix: v.string(),      // first 8 chars for display (e.g., "oc_dk_ab12...")
+    keyPrefix: v.string(),      // first 8 chars for display (e.g., "ch_ak_ab12...")
     name: v.string(),           // user-given label
     lastUsedAt: v.optional(v.number()),
     createdAt: v.number(),
@@ -351,7 +351,7 @@ export default defineSchema({
     .index("by_user_and_time", ["userId", "timestamp"])
     .index("by_instance", ["instanceId"]),
 
-  // ─── Daily Usage Aggregates (for fast dashboard queries) ───
+  // ─── Daily Usage Aggregates (for fast ClawHub queries) ───
   dailyUsage: defineTable({
     userId: v.id("users"),
     instanceId: v.optional(v.id("instances")),
@@ -397,7 +397,7 @@ convex/
 │   ├── dailyUsage.ts          # Update daily aggregates
 │   └── processedEvents.ts     # Deduplication tracking
 ├── queries/
-│   ├── dashboard.ts           # Overview stats for dashboard home
+│   ├── clawhub.ts             # Overview stats for ClawHub home
 │   ├── instances.ts           # Instance list + detail
 │   ├── sessions.ts            # Session list + detail
 │   ├── usage.ts               # Usage analytics (daily, by model, etc.)
@@ -451,9 +451,9 @@ export default http;
 
 ### 2.3 Convex Queries
 
-**Dashboard Overview (`queries/dashboard.ts`):**
+**ClawHub Overview (`queries/clawhub.ts`):**
 ```typescript
-// getDashboardOverview(userId)
+// getClawHubOverview(userId)
 // Returns:
 {
   instances: { total: number; online: number; offline: number };
@@ -545,10 +545,10 @@ app/
 │   ├── page.tsx                    # Landing page
 │   ├── pricing/page.tsx            # Pricing page (free vs pro)
 │   └── layout.tsx                  # Marketing layout (no sidebar)
-├── (dashboard)/
-│   ├── layout.tsx                  # Dashboard layout (sidebar + topbar)
-│   ├── dashboard/
-│   │   └── page.tsx                # Dashboard overview
+├── (clawhub)/
+│   ├── layout.tsx                  # ClawHub layout (sidebar + topbar)
+│   ├── clawhub/
+│   │   └── page.tsx                # ClawHub overview
 │   ├── instances/
 │   │   ├── page.tsx                # All instances list
 │   │   └── [instanceId]/
@@ -579,7 +579,7 @@ app/
 
 ### 3.2 Key Pages
 
-#### Dashboard Overview (`/dashboard`)
+#### ClawHub Overview (`/clawhub`)
 
 The main landing page after login. Shows at-glance health of the user's Openclaw setup.
 
@@ -639,7 +639,7 @@ Guided flow for new users to connect their first Openclaw instance.
 
 **Steps:**
 1. Generate an API key
-2. Install the dashboard plugin on their Openclaw (`openclaw plugin install openclaw-dashboard`)
+2. Install the ClawHub plugin on their Openclaw (`openclaw plugin install openclaw-clawhub`)
 3. Configure the plugin with API key
 4. Verify connection (poll for first telemetry)
 
@@ -664,7 +664,7 @@ components/
 │   ├── sidebar.tsx             # Navigation sidebar
 │   ├── topbar.tsx              # Top bar with user menu
 │   └── mobile-nav.tsx          # Mobile navigation
-├── dashboard/
+├── clawhub/
 │   ├── stats-bar.tsx           # Horizontal stat cards
 │   ├── instance-card.tsx       # Instance status card
 │   ├── activity-feed.tsx       # Recent activity list
@@ -715,7 +715,7 @@ Use **Recharts** (widely used, works well with Next.js SSR):
 // middleware.ts
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/instances(.*)", "/sessions(.*)", "/usage(.*)", "/costs(.*)", "/agents(.*)", "/settings(.*)", "/setup(.*)"]);
+const isProtectedRoute = createRouteMatcher(["/clawhub(.*)", "/instances(.*)", "/sessions(.*)", "/usage(.*)", "/costs(.*)", "/agents(.*)", "/settings(.*)", "/setup(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) await auth.protect();
@@ -771,29 +771,29 @@ Limits are enforced at two levels:
 8. **Build the ingest HTTP action** - API key validation, event deduplication, basic mutation fan-out
 9. **Build API key management** - Settings page to create/revoke keys
 
-**Deliverable:** User can sign up, log in, generate an API key, and see an empty dashboard.
+**Deliverable:** User can sign up, log in, generate an API key, and see an empty ClawHub.
 
 ### Phase 2: Openclaw Plugin (Week 2-3)
 
-**Goal:** Build the plugin that pushes data from Openclaw to the dashboard.
+**Goal:** Build the plugin that pushes data from Openclaw to ClawHub.
 
 1. **Scaffold plugin** - manifest, entry point, config schema
 2. **Implement event collector** - hook into gateway lifecycle events
 3. **Implement snapshot collector** - periodic full-state capture via gateway methods
 4. **Implement HTTP pusher** - batch POST to Convex ingest endpoint with retry logic
 5. **Implement deduplication** - event IDs, idempotent pushes
-6. **Build the user-invocable skill** - `dashboard` skill for status checks
-7. **Build the gateway method** - `dashboard.status` for plugin status
+6. **Build the user-invocable skill** - `clawhub` skill for status checks
+7. **Build the gateway method** - `clawhub.status` for plugin status
 8. **Write installation docs** - step-by-step setup guide
 9. **Test end-to-end** - install plugin locally, verify data arrives in Convex
 
 **Deliverable:** Plugin installed on Openclaw pushes telemetry to Convex every 60s.
 
-### Phase 3: Dashboard Core (Week 3-4)
+### Phase 3: ClawHub Core (Week 3-4)
 
-**Goal:** Build the main dashboard views with real data.
+**Goal:** Build the main ClawHub views with real data.
 
-1. **Dashboard overview page** - stats bar, instance cards, activity feed
+1. **ClawHub overview page** - stats bar, instance cards, activity feed
 2. **Instance list page** - all instances with status
 3. **Instance detail page** - health, agents, channels, sessions, cron
 4. **Session list page** - filterable, sortable table with pagination
@@ -802,7 +802,7 @@ Limits are enforced at two levels:
 7. **Convex cron jobs** - instance health check, processed event cleanup
 8. **Setup/onboarding page** - guided flow to connect first instance
 
-**Deliverable:** Fully functional dashboard showing real Openclaw data.
+**Deliverable:** Fully functional ClawHub showing real Openclaw data.
 
 ### Phase 4: Analytics & Costs (Week 4-5)
 
@@ -830,7 +830,7 @@ Limits are enforced at two levels:
 8. **Mobile responsiveness** - ensure all pages work on mobile
 9. **Dark mode** - toggle between light/dark themes
 
-**Deliverable:** Production-ready dashboard with billing.
+**Deliverable:** Production-ready ClawHub with billing.
 
 ### Phase 6: Open Source & Launch (Week 6-7)
 
@@ -852,7 +852,7 @@ Limits are enforced at two levels:
 
 ### 7.1 Why Convex for this?
 
-- **Real-time subscriptions** - Dashboard UI auto-updates when new telemetry arrives (no polling needed on frontend)
+- **Real-time subscriptions** - ClawHub UI auto-updates when new telemetry arrives (no polling needed on frontend)
 - **HTTP Actions** - Clean ingest endpoint for the plugin to POST to
 - **Cron jobs** - Built-in scheduling for health checks and cleanup
 - **TypeScript end-to-end** - Schema, queries, mutations, and frontend all type-safe
@@ -909,15 +909,15 @@ POLAR_WEBHOOK_SECRET=             # Polar webhook signing secret
 POLAR_ORGANIZATION_ID=            # Your Polar org
 
 # Plugin (set by user in their Openclaw config)
-# OPENCLAW_DASHBOARD_API_KEY=     # Generated from dashboard settings
-# OPENCLAW_DASHBOARD_ENDPOINT=    # Defaults to hosted URL
+# CLAWHUB_API_KEY=                # Generated from ClawHub settings
+# CLAWHUB_ENDPOINT=               # Defaults to hosted URL
 ```
 
 ---
 
 ## Summary
 
-This plan delivers an open-source monitoring dashboard for Openclaw that:
+This plan delivers ClawHub, an open-source monitoring hub for Openclaw that:
 
 1. **Connects natively** via an Openclaw plugin (no external processes)
 2. **Syncs periodically** (60s default) with batched telemetry pushes
